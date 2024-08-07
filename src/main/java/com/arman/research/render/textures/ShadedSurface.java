@@ -18,7 +18,7 @@ public class ShadedSurface extends Texture {
     public static final int SHADE_RES_SQUARED_BITS = SHADE_RES_BITS * 2;
 
     private short[] buffer;
-    private SoftReference<short[]> bufferReference;
+    private SoftReference bufferReference;
     private boolean dirty;
     private ShadedTexture texture;
     private Rectangle3f textureBounds;
@@ -27,7 +27,7 @@ public class ShadedSurface extends Texture {
     private int shadeMapWidth;
     private int shadeMapHeight;
     private int shade;
-    private int shadeIncrement;
+    private int shadeInc;
 
     public ShadedSurface(int width, int height) {
         this(null, width, height);
@@ -36,51 +36,52 @@ public class ShadedSurface extends Texture {
     public ShadedSurface(short[] buffer, int width, int height) {
         super(width, height);
         this.buffer = buffer;
-        this.bufferReference = new SoftReference<>(buffer);
-        this.textureBounds = new Rectangle3f();
-        this.dirty = true;
+        bufferReference = new SoftReference(buffer);
+        textureBounds = new Rectangle3f();
+        dirty = true;
     }
 
-    public static void createShadedSurface(TexturedPolygon3f polygon, ShadedTexture texture, List<PointLight3f> lights, float ambientLightIntensity) {
-        Vector3f origin = polygon.getVertex(0);
-        Vector3f dv = new Vector3f(polygon.getVertex(1)).subtract(origin);
-        Vector3f du = new Vector3f(polygon.calcNormal().cross(dv));
-        Rectangle3f bounds = new Rectangle3f(origin, du, dv, texture.getWidth(), texture.getHeight());
-        createShadedSurface(polygon, texture, bounds, lights, ambientLightIntensity);
+    public static void createShadedSurface(TexturedPolygon3f p, ShadedTexture t, List<PointLight3f> lights, float ambientLightIntensity) {
+        Vector3f origin = p.getVertex(0);
+        Vector3f dv = new Vector3f(p.getVertex(1));
+        dv.subtract(origin);
+        Vector3f du = new Vector3f(p.calcNormal().cross(dv));
+        Rectangle3f bounds = new Rectangle3f(origin, du, dv, t.getWidth(), t.getHeight());
+        createShadedSurface(p, t, bounds, lights, ambientLightIntensity);
     }
 
-    public static void createShadedSurface(TexturedPolygon3f polygon, ShadedTexture texture, Rectangle3f textureBounds, List<PointLight3f> lights, float ambientLightIntensity) {
-        polygon.setTexture(texture, textureBounds);
-        Rectangle3f surfaceBounds = polygon.calcBounds();
-        adjustSurfaceBounds(surfaceBounds);
-
+    public static void createShadedSurface(TexturedPolygon3f p, ShadedTexture t, Rectangle3f textureBounds, List<PointLight3f> lights, float ambientLightIntensity) {
+        p.setTexture(t, textureBounds);
+        Rectangle3f surfaceBounds = p.calcBounds();
+        Vector3f du = new Vector3f(surfaceBounds.getDu());
+        Vector3f dv = new Vector3f(surfaceBounds.getDv());
+        du.multiply(SURFACE_BORDER_SIZE);
+        dv.multiply(SURFACE_BORDER_SIZE);
+        surfaceBounds.getOrigin().subtract(du);
+        surfaceBounds.getOrigin().subtract(dv);
         int width = (int) Math.ceil(surfaceBounds.getWidth() + SURFACE_BORDER_SIZE * 2);
         int height = (int) Math.ceil(surfaceBounds.getHeight() + SURFACE_BORDER_SIZE * 2);
         surfaceBounds.setWidth(width);
         surfaceBounds.setHeight(height);
-
         ShadedSurface surface = new ShadedSurface(width, height);
-        surface.setTexture(texture, textureBounds);
+        surface.setTexture(t, textureBounds);
         surface.setSurfaceBounds(surfaceBounds);
         surface.buildShadeMap(lights, ambientLightIntensity);
-
-        polygon.setTexture(surface, surfaceBounds);
-    }
-
-    private static void adjustSurfaceBounds(Rectangle3f surfaceBounds) {
-        Vector3f du = new Vector3f(surfaceBounds.getDu()).multiply(SURFACE_BORDER_SIZE);
-        Vector3f dv = new Vector3f(surfaceBounds.getDv()).multiply(SURFACE_BORDER_SIZE);
-        surfaceBounds.getOrigin().subtract(du).subtract(dv);
+        p.setTexture(surface, surfaceBounds);
     }
 
     public short getColor(int x, int y) {
-        x = clamp(x, 0, getWidth() - 1);
-        y = clamp(y, 0, getHeight() - 1);
+        if (x < 0) {
+            x = 0;
+        } else if (x >= getWidth()) {
+            x = getWidth() - 1;
+        }
+        if (y < 0) {
+            y = 0;
+        } else if (y >= getHeight()) {
+            y = getHeight() - 1;
+        }
         return buffer[x + y * getWidth()];
-    }
-
-    private int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     public void setDirty(boolean dirty) {
@@ -93,7 +94,7 @@ public class ShadedSurface extends Texture {
 
     public void newSurface(int width, int height) {
         buffer = new short[width * height];
-        bufferReference = new SoftReference<>(buffer);
+        bufferReference = new SoftReference(buffer);
     }
 
     public void clear() {
@@ -106,19 +107,19 @@ public class ShadedSurface extends Texture {
 
     public boolean retrieveSurface() {
         if (buffer == null) {
-            buffer = bufferReference.get();
+            buffer = (short[]) bufferReference.get();
         }
         return buffer != null;
     }
 
-    public void setTexture(ShadedTexture texture) {
-        this.texture = texture;
-        textureBounds.setWidth(texture.getWidth());
-        textureBounds.setHeight(texture.getHeight());
+    public void setTexture(ShadedTexture t) {
+        this.texture = t;
+        textureBounds.setWidth(t.getWidth());
+        textureBounds.setHeight(t.getHeight());
     }
 
-    public void setTexture(ShadedTexture texture, Rectangle3f bounds) {
-        setTexture(texture);
+    public void setTexture(ShadedTexture t, Rectangle3f bounds) {
+        setTexture(t);
         textureBounds.setTo(bounds);
     }
 
@@ -137,22 +138,16 @@ public class ShadedSurface extends Texture {
         int width = (int) surfaceBounds.getWidth();
         int height = (int) surfaceBounds.getHeight();
         newSurface(width, height);
-
-        buildSurfaceBuffer(width, height);
-    }
-
-    private void buildSurfaceBuffer(int width, int height) {
         Vector3f origin = textureBounds.getOrigin();
         Vector3f du = textureBounds.getDu();
         Vector3f dv = textureBounds.getDv();
-        Vector3f d = new Vector3f(surfaceBounds.getOrigin()).subtract(origin);
-
-        int su = (int) (d.dot(du) - SURFACE_BORDER_SIZE);
-        int sv = (int) (d.dot(dv) - SURFACE_BORDER_SIZE);
+        Vector3f d = new Vector3f(surfaceBounds.getOrigin());
+        d.subtract(origin);
+        int su = (int) ((d.dot(du) - SURFACE_BORDER_SIZE));
+        int sv = (int) ((d.dot(dv) - SURFACE_BORDER_SIZE));
         int offset = 0;
         int shadeMapOffsetU = SHADE_RES - SURFACE_BORDER_SIZE - su;
         int shadeMapOffsetV = SHADE_RES - SURFACE_BORDER_SIZE - sv;
-
         for (int v = sv; v < sv + height; v++) {
             texture.setCurrentRow(v);
             int u = su;
@@ -162,7 +157,7 @@ public class ShadedSurface extends Texture {
                 int eu = Math.min(su + width, u + amount);
                 while (u < eu) {
                     buffer[offset++] = texture.getColorCurrentRow(u, shade >> SHADE_RES_SQUARED_BITS);
-                    shade += shadeIncrement;
+                    shade += shadeInc;
                     u++;
                 }
                 amount = SHADE_RES;
@@ -170,11 +165,73 @@ public class ShadedSurface extends Texture {
         }
     }
 
-    private void getInterpolatedShade(int u, int v) {
-        // Implement shade interpolation logic here
+    public int getInterpolatedShade(int u, int v) {
+        int fu = u & SHADE_RES_MASK;
+        int fv = v & SHADE_RES_MASK;
+        int offset = (u >> SHADE_RES_BITS) + ((v >> SHADE_RES_BITS) * shadeMapWidth);
+        int shade00 = (SHADE_RES - fv) * shadeMap[offset];
+        int shade01 = fv * shadeMap[offset + shadeMapWidth];
+        int shade10 = (SHADE_RES - fv) * shadeMap[offset + 1];
+        int shade11 = fv * shadeMap[offset + shadeMapWidth + 1];
+        shade = SHADE_RES_SQUARED / 2 + (SHADE_RES - fu) * shade00 + (SHADE_RES - fu) * shade01 + fu * shade10 + fu * shade11;
+        shadeInc = -shade00 - shade01 + shade10 + shade11;
+        return shade >> SHADE_RES_SQUARED_BITS;
     }
 
-    private void buildShadeMap(List<PointLight3f> lights, float ambientLightIntensity) {
-        // Implement shade map building logic here
+    public int getShade(int u, int v) {
+        return shadeMap[u + v * shadeMapWidth];
     }
+
+    public void buildShadeMap(List<PointLight3f> lights, float ambientLightIntensity) {
+        Vector3f surfaceNormal = surfaceBounds.calcNormal();
+        int width = (int) surfaceBounds.getWidth() - SURFACE_BORDER_SIZE * 2;
+        int height = (int) surfaceBounds.getHeight() - SURFACE_BORDER_SIZE * 2;
+        shadeMapWidth = width / SHADE_RES + 4;
+        shadeMapHeight = height / SHADE_RES + 4;
+        shadeMap = new byte[shadeMapWidth * shadeMapHeight];
+        Vector3f origin = new Vector3f(surfaceBounds.getOrigin());
+        Vector3f du = new Vector3f(surfaceBounds.getDu());
+        Vector3f dv = new Vector3f(surfaceBounds.getDv());
+        du.multiply(SHADE_RES - SURFACE_BORDER_SIZE);
+        dv.multiply(SHADE_RES - SURFACE_BORDER_SIZE);
+        origin.subtract(du);
+        origin.subtract(dv);
+        Vector3f point = new Vector3f();
+        du.setTo(surfaceBounds.getDu());
+        dv.setTo(surfaceBounds.getDv());
+        du.multiply(SHADE_RES);
+        dv.multiply(SHADE_RES);
+        for (int v = 0; v < shadeMapHeight; v++) {
+            point.setTo(origin);
+            for (int u = 0; u < shadeMapWidth; u++) {
+                shadeMap[u + v * shadeMapWidth] = calcShade(surfaceNormal, point, lights, ambientLightIntensity);
+                point.add(du);
+            }
+            origin.add(dv);
+        }
+    }
+
+    public byte calcShade(Vector3f normal, Vector3f point, List<PointLight3f> lights, float ambientLightIntensity) {
+        float intensity = 0;
+        Vector3f directionToLight = new Vector3f();
+        for (int i = 0; i < lights.size(); i++) {
+            PointLight3f light = lights.get(i);
+            directionToLight.setTo(light);
+            directionToLight.subtract(point);
+            float dist = directionToLight.length();
+            directionToLight.normalize();
+            float lightIntensity = light.getIntensity(dist) * directionToLight.dot(normal);
+            lightIntensity = Math.min(lightIntensity, 1);
+            lightIntensity = Math.max(lightIntensity, 0);
+            intensity += lightIntensity;
+        }
+        intensity = Math.min(intensity, 1);
+        intensity = Math.max(intensity, 0);
+        intensity += ambientLightIntensity;
+        intensity = Math.min(intensity, 1);
+        intensity = Math.max(intensity, 0);
+        int level = Math.round(intensity * ShadedTexture.MAX_LEVEL);
+        return (byte) level;
+    }
+
 }
