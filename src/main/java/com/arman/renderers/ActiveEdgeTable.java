@@ -1,3 +1,4 @@
+
 package com.arman.renderers;
 
 import com.arman.geom.Polygon3D;
@@ -7,7 +8,7 @@ import java.util.*;
 
 public class ActiveEdgeTable {
 
-    private List<EdgeData> activeEdges;
+    private final List<EdgeData> activeEdges;
     private int scanLine;
 
     public ActiveEdgeTable() {
@@ -16,109 +17,71 @@ public class ActiveEdgeTable {
 
     public ActiveEdgeTable(int scanLine) {
         this.activeEdges = new LinkedList<>();
-        this.set(scanLine);
+        set(scanLine);
     }
 
     public void nextLine() {
-        this.scanLine++;
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            this.activeEdges.get(i).increment();
-        }
+        scanLine++;
+        activeEdges.forEach(EdgeData::increment);
     }
 
     public void set(int scanLine) {
         this.scanLine = scanLine;
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            this.activeEdges.get(i).setToIntersect(scanLine);
-        }
+        activeEdges.forEach(edge -> edge.setToIntersect(scanLine));
     }
 
     public void cleanUp(int bottomY) {
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            EdgeData ae = this.activeEdges.get(i);
-            if (ae.endsAt(bottomY)) {
-                this.activeEdges.remove(i);
-                i--;
-            }
-        }
+        activeEdges.removeIf(edge -> edge.endsAt(bottomY));
     }
 
     public void add(EdgeData edge) {
-        this.activeEdges.add(edge);
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            this.activeEdges.get(i).setToIntersect(scanLine);
-        }
+        activeEdges.add(edge);
+        edge.setToIntersect(scanLine);
     }
 
     public void add(Edge edge, Polygon3D poly) {
-        this.add(new EdgeData(edge, poly));
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            this.activeEdges.get(i).setToIntersect(scanLine);
-        }
+        add(new EdgeData(edge, poly));
     }
 
     public void addAll(Collection<? extends Edge> edges, Polygon3D poly) {
-        for (Edge e : edges) {
-            this.add(e, poly);
-        }
+        edges.forEach(edge -> add(new EdgeData(edge, poly)));
     }
 
     public void addAll(Collection<? extends EdgeData> edges) {
-        this.activeEdges.addAll(edges);
+        activeEdges.addAll(edges);
     }
 
     public int size() {
-        return this.activeEdges.size();
+        return activeEdges.size();
     }
 
     public boolean isValid() {
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            if (this.activeEdges.get(i).isValid()) {
-                return true;
-            }
-        }
-        return false;
+        return activeEdges.stream().anyMatch(EdgeData::isValid);
     }
 
     public EdgeData get(int index) {
-        return this.activeEdges.get(index);
+        return activeEdges.get(index);
     }
 
     public void sort() {
-        Collections.sort(this.activeEdges, new Comparator<EdgeData>() {
-            @Override
-            public int compare(EdgeData o1, EdgeData o2) {
-                float x1 = o1.getX();
-                float x2 = o2.getX();
-                if (x1 < x2) {
-                    return -1;
-                } else if (x1 > x2) {
-                    return 1;
-                }
-                return 0;
-            }
-        });
+        activeEdges.sort(Comparator.comparingDouble(EdgeData::getX));
     }
 
     public boolean isEmpty() {
-        return this.activeEdges.isEmpty();
+        return activeEdges.isEmpty();
     }
 
     public int getScanLine() {
-        return this.scanLine;
+        return scanLine;
     }
 
     @Override
     public String toString() {
-        String res = "";
-        for (int i = 0; i < this.activeEdges.size(); i++) {
-            res += this.scanLine + ": ";
-            res += this.activeEdges.get(i).toString();
-            res += " ";
+        StringBuilder res = new StringBuilder();
+        for (EdgeData edge : activeEdges) {
+            res.append(scanLine).append(": ").append(edge).append(" ");
         }
-        res = res.trim();
-        res += "\n";
-        return res;
+        return res.toString().trim() + "\n";
     }
-
 }
+
